@@ -1,6 +1,6 @@
 # Kimi K3.1 Pro on 6x 80 GB CMP 170HX + 2x RTX PRO 6000 Blackwell (`vLLM TP2 x PP4`)
 
-Serve Moonshot AI's 2.8T-parameter **Kimi K3.1 Pro** across two hosts (2x RTX PRO 6000 Blackwell 96 GB + 6x unlocked 80 GB NVIDIA CMP 170HX at PCIe Gen4 x16 over 100 GbE) at **105.0 / 77.9 / 55.8 tok/s** single-stream decode (structured / code / prose medians, temperature 0) with a 32,768-token context and 58,735-token KV pool.
+Serve Moonshot AI's 2.8T-parameter **Kimi K3.1 Pro** across two hosts (2x RTX PRO 6000 Blackwell 96 GB + 6x unlocked 80 GB NVIDIA CMP 170HX at PCIe Gen4 x16 over 100 GbE) at **105.0 / 77.9 / 55.8 tok/s** single-stream decode (structured / code / prose medians, temperature 0) with a 131,072-token per-request context (up to 262,144 single-stream) and a 399,384-token KV cache pool.
 
 This repository holds the engine patch (`sm_80` + `sm_120`), five standalone CUDA extension builders (`_k31_vq_C`, `_k31_dense_C`, `_k31_glue_C`, `_k31_p2p_C`, `_exl3_C`), per-stage checkpoint view and VRAM planning tools, multi-node Docker launchers, and the 18-prompt benchmark runner behind the [cmp.wiki recipe](https://cmp.wiki/wiki/Kimi_K3.1_Pro_on_6x_8_GB_plus_2x_RTX_PRO_6000_(vLLM_TP2_x_PP4)).
 
@@ -15,7 +15,7 @@ This repository holds the engine patch (`sm_80` + `sm_120`), five standalone CUD
 
 Even at 1.625 bits per routed expert weight, the quantized 93-layer checkpoint occupies 558.6 GiB on disk before embeddings, drafter, CUDA graphs, and KV/KDA state. Each of the six CMP 170HX cards must be unlocked to 80 GB (10 active FBPs) and trained to PCIe Gen4 x16 (`16 GT/s`), paired on the same CPU socket and root complex with TRAP31 PCIe P2P enabled.
 
-## Measured Speeds (`TP2 x PP4`, `29,21,23,20`, Temperature 0)
+## Measured Speeds (`TP2 x PP4`, `28,22,22,21`, Temperature 0)
 
 | Workload / Metric | Result |
 | --- | --- |
@@ -24,9 +24,9 @@ Even at 1.625 bits per routed expert weight, the quantized 93-layer checkpoint o
 | Step time & accepted tokens per step | **39.4 / 40.8 / 42.8 ms**; **3.88 / 3.22 / 2.35 tok/step** (3.02 overall) |
 | 1 stream without speculative decoding | 28.4 to 29.3 tok/s (34.2 to 35.2 ms/token) |
 | Concurrent streams (measured without speculation) | 2 streams: 55.7 tok/s aggregate; 4 streams: 87.6 tok/s aggregate |
-| Cold prefill (no prefix cache): 3.8k / 15.4k / 17k / 32.6k | 354 / 585 / 596 / 668 tok/s |
-| KV cache capacity | 58,735 tokens (max request length 32,768, 4 sequences) |
-| VRAM per card (loaded + drafter + graphs + KV) | Blackwells: 71.4 / 96 GiB; CMP stages 1 to 3: 73.7 / 78.3 / 78.0 / 80 GiB |
+| Cold prefill (no prefix cache): 3.8k / 15.4k / 17k / 32.6k / 58.7k | 354 / 585 / 596 / 668 / 717 tok/s |
+| KV cache capacity | **399,384 tokens** (default `MAX_LEN=131072`, 3.05x concurrency at 128K; supports up to 262,144 single-stream) |
+| VRAM per card (loaded + drafter + graphs + KV) | Blackwells: 92.7 / 96 GiB; CMP stages 1 to 3: 74.5 / 75.2 / 77.5 / 80 GiB |
 | Cold NVMe startup to `/health` 200 | 4 to 5 minutes |
 
 Full measurement notes, component gains, and options that did not pay: [docs/outcomes.md](docs/outcomes.md).
@@ -47,17 +47,17 @@ Copy or rsync `./runtime/` to the second host so both hosts mount the identical 
 
 ### 2. Verify checkpoints and build per-stage symlink views
 
-Download [darkmaniac7/Kimi-K3.1-Pro-abliterated-k31q](https://huggingface.co/darkmaniac7/Kimi-K3.1-Pro-abliterated-k31q) and [darkmaniac7/Kimi-K3.1-Pro-DSpark-EXL3-K6](https://huggingface.co/darkmaniac7/Kimi-K3.1-Pro-DSpark-EXL3-K6) onto local NVMe on each host (at minimum, layers 0 to 28 + `embed.safetensors` on the stage-0 host, and layers 29 to 92 + `embed.safetensors`, `head.safetensors`, `vision.safetensors`, and DSpark on the CMP host), verify SHA-256 digests, and build stage views:
+Download [darkmaniac7/Kimi-K3.1-Pro-abliterated-k31q](https://huggingface.co/darkmaniac7/Kimi-K3.1-Pro-abliterated-k31q) and [darkmaniac7/Kimi-K3.1-Pro-DSpark-EXL3-K6](https://huggingface.co/darkmaniac7/Kimi-K3.1-Pro-DSpark-EXL3-K6) onto local NVMe on each host (at minimum, layers 0 to 27 + `embed.safetensors` on the stage-0 host, and layers 28 to 92 + `embed.safetensors`, `head.safetensors`, `vision.safetensors`, and DSpark on the CMP host), verify SHA-256 digests, and build stage views:
 
 ```bash
 python3 tools/verify_weights.py /srv/models/Kimi-K3.1-Pro-abliterated-k31q
 python3 tools/verify_weights.py --dspark /srv/models/Kimi-K3.1-Pro-DSpark-EXL3-K6
 
-# Stage 0 host (layers 0..28):
-python3 tools/k31q_views.py /srv/models/Kimi-K3.1-Pro-abliterated-k31q /srv/views 29,21,23,20 --tag k31p29 --stages 0
+# Stage 0 host (layers 0..27):
+python3 tools/k31q_views.py /srv/models/Kimi-K3.1-Pro-abliterated-k31q /srv/views 28,22,22,21 --tag k31p28 --stages 0
 
-# CMP host (stages 1, 2, 3 = layers 29..49, 50..72, 73..92):
-python3 tools/k31q_views.py /srv/models/Kimi-K3.1-Pro-abliterated-k31q /srv/views 29,21,23,20 --tag k31p29 --stages 1,2,3
+# CMP host (stages 1, 2, 3 = layers 28..49, 50..71, 72..92):
+python3 tools/k31q_views.py /srv/models/Kimi-K3.1-Pro-abliterated-k31q /srv/views 28,22,22,21 --tag k31p28 --stages 1,2,3
 ```
 
 ### 3. Configure hosts and launch

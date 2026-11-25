@@ -1,6 +1,6 @@
 # Measured Outcomes and Design Notes
 
-All single-stream decode figures below were measured on 2026-11-25 against the OpenAI-compatible HTTP endpoint on stage 0 (`TP2 x PP4`, partition `29, 21, 23, 20`: two RTX PRO 6000 Blackwell 96 GB GPUs at 400 W on stage 0 over 100 GbE RoCE, and six 80 GB CMP 170HX cards at PCIe Gen4 x16 and 250 to 300 W across stages 1 to 3).
+All single-stream decode figures below were measured on 2026-11-25 against the OpenAI-compatible HTTP endpoint on stage 0 (`TP2 x PP4`, partition `28, 22, 22, 21`: two RTX PRO 6000 Blackwell 96 GB GPUs at 400 W on stage 0 over 100 GbE RoCE, and six 80 GB CMP 170HX cards at PCIe Gen4 x16 and 250 to 300 W across stages 1 to 3).
 
 The single-stream decode benchmark (`tools/bench_multi.py` with `tools/prompts_decode_multi.jsonl`) runs 18 deterministic prompts (`temperature=0`, `max_tokens=512`): 6 structured JSON/YAML/SQL prompts, 6 code generation prompts, and 6 analytical prose prompts.
 
@@ -15,14 +15,14 @@ The single-stream decode benchmark (`tools/bench_multi.py` with `tools/prompts_d
 
 Additional baselines on the same hardware:
 - **Without speculative decoding (`SPEC=none`, `T=0`):** 28.4 to 29.3 tok/s single stream (34.2 to 35.2 ms/token); 55.7 tok/s aggregate at 2 concurrent streams; 87.6 tok/s aggregate at 4 concurrent streams (21.9 to 22.9 tok/s per stream).
-- **Cold prefill (unique prompts, prefix caching off):** 354 tok/s at 3,838 tokens, 585 tok/s at 15,352 tokens, 596 tok/s at 17,000 tokens, and 668 tok/s at 32,600 tokens.
-- **KV pool:** 58,735 tokens across the four stages (`KVGIB_LIST=3.40,2.60,2.90,2.80`, `max_model_len=32768`, `max_num_seqs=4`).
+- **Cold prefill (unique prompts, prefix caching off):** 354 tok/s at 3,838 tokens, 585 tok/s at 15,352 tokens, 596 tok/s at 17,000 tokens, 668 tok/s at 32,600 tokens, and 717 tok/s at 58,746 tokens.
+- **KV pool:** 399,384 tokens across the four stages (`PART=28,22,22,21`, `KVGIB_LIST=7.90,7.20,7.20,7.60`, `max_model_len=131072` default or up to `262144` single-stream, `max_num_seqs=4`, 3.05x concurrency at 128K).
 
 ## What Each Component Contributes
 
 1. **`k31q` v1 hybrid VQ + 6-bit EXL3 quantization (`_k31_vq_C`, `_k31_dense_C`, `_exl3_C`):**
    - Compresses the 896 routed experts (`top_k=16`, `I=3072`) in all 92 MoE layers with 2D 3-bit vector quantization (`vq_d2_b3`, 8-entry codebook, group-128 input scales, 1.625 bpw all-in) and keeps all attention projections (69 KDA + 24 gated MLA), shared experts, routed-expert shared up/down projections, layer 0's dense MLP, and the LM head in 6-bit EXL3 (`mul1` lattice, ~35.2 dB SQNR).
-   - Fits all 93 layers in 558.6 GiB on disk and 63.4 to 69.8 GiB of weights per CMP rank, leaving room on 80 GB cards for CUDA graphs, the drafter, and 58,735 KV tokens.
+   - Fits all 93 layers in 558.6 GiB on disk and 66.1 to 69.8 GiB of weights per CMP rank in the balanced `28,22,22,21` partition (keeping all 5 DSpark tap layers `[76,80,84,88,92]` local to stage 3), leaving room on 80 GB cards for CUDA graphs, the drafter, and 399,384 KV tokens.
 2. **6-bit EXL3 DSpark drafter with cross-stage taps, 32+64 Markov shortlist, suffix hybrid, and adaptive `k`:**
    - Quantizing `Inferact/Kimi-K3.1-Pro-DSpark` (2.5B, 5 sliding-window GQA layers) to 6-bit EXL3 reduces its stage-3 footprint from 2.71 GiB to 1.11 GiB per TP2 rank (`VLLM_DSPARK_EXL3_K6=1`).
    - Hidden states from the 5 tapped target layers ride packed PP hops (`VLLM_PP_PACKED_HOP=1`, `VLLM_PP_HOP_CAT_PACK=1`) to stage 3.

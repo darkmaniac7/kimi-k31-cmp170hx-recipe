@@ -1,0 +1,5 @@
+UPSTREAM_REPO=https://github.com/vllm-project/vllm.git
+UPSTREAM_COMMIT=ef687f6179b752c028767e610addbda67ed36d03
+CONTAINER_IMAGE=vllm/vllm-openai:nightly-647a76866b4559a74e27d1c6b55fbffe85c07ce4
+CONTAINER_DIGEST=sha256:7a46a81f0539b4a1b407fe2c29abbe0b130eeee4e4597f4ed357863af9e36086
+PRECOMPILED_WHEEL_URL=https://wheels.vllm.ai/ef687f6179b752c028767e610addbda67ed36d03/vllm-0.34.0rc1.dev1147%2Bgef687f617-cp38-abi3-manylinux_2_28_x86_64.whl

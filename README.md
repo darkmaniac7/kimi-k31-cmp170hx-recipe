@@ -25,8 +25,8 @@ Even at 1.625 bits per routed expert weight, the quantized 93-layer checkpoint o
 | 1 stream without speculative decoding | 28.4 to 29.3 tok/s (34.2 to 35.2 ms/token) |
 | Concurrent streams (measured without speculation) | 2 streams: 55.7 tok/s aggregate; 4 streams: 87.6 tok/s aggregate |
 | Cold prefill (no prefix cache): 3.8k / 15.4k / 17k / 32.6k / 58.7k | 354 / 585 / 596 / 668 / 717 tok/s |
-| KV cache capacity | **399,384 tokens** (default `MAX_LEN=131072`, 3.05x concurrency at 128K; supports up to 262,144 single-stream) |
-| VRAM per card (loaded + drafter + graphs + KV) | Blackwells: 92.7 / 96 GiB; CMP stages 1 to 3: 74.5 / 75.2 / 77.5 / 80 GiB |
+| KV cache capacity | **399,384 tokens** (`KVGIB_LIST=7.90,7.20,7.20,7.60`, 3.05x at 128K; up to 262,144 single-stream) or **143,408 tokens** (`KVGIB_LIST=2.80,2.70,2.60,2.75`, leaving 4.5 to 6.6 GiB free per GPU for co-resident workloads) |
+| VRAM per card (loaded + drafter + graphs + KV) | Dedicated 399K KV: 92.7 GiB (BW), 74.5 / 75.2 / 77.5 GiB (CMP); compact 143K KV: 87.6 GiB (BW), 70.0 / 70.6 / 72.7 GiB (CMP) |
 | Cold NVMe startup to `/health` 200 | 4 to 5 minutes |
 
 Full measurement notes, component gains, and options that did not pay: [docs/outcomes.md](docs/outcomes.md).

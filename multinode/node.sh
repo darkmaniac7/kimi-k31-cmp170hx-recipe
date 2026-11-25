@@ -43,7 +43,7 @@ PREFIX_ARGS=(--no-enable-prefix-caching)
 
 SPEC_ARGS=()
 if [ "${SPEC:-none}" = "dspark" ]; then
-  SPECJSON="{\"method\":\"dspark\",\"model\":\"$DSPARK_DIR\",\"num_speculative_tokens\":${SPEC_NUM_TOKENS},\"adaptive_k\":{\"tiers\":${SPEC_TIERS},\"confidence\":{\"thresholds\":${SPEC_THRESHOLDS},\"hysteresis\":0.12,\"accept_weight\":0.12,\"max_age\":2},\"log_interval\":64}}"
+  SPECJSON="{\"method\":\"dspark\",\"model\":\"$DSPARK_DIR\",\"kv_cache_dtype\":\"bfloat16\",\"num_speculative_tokens\":${SPEC_NUM_TOKENS},\"adaptive_k\":{\"tiers\":${SPEC_TIERS},\"confidence\":{\"thresholds\":${SPEC_THRESHOLDS},\"hysteresis\":0.12,\"accept_weight\":0.12,\"max_age\":2},\"log_interval\":64}}"
   SPEC_ARGS=(--speculative-config "$SPECJSON")
 fi
 
@@ -91,7 +91,7 @@ CMD=(
   --entrypoint bash "$IMG" -c "$PRE" k31
   "$VIEW"
   --served-model-name "$SERVED_MODEL_NAME"
-  --load-format k31q --quantization k31q --kv-cache-dtype bfloat16
+  --load-format k31q --quantization k31q --kv-cache-dtype "${KV_DTYPE:-bfloat16}"
   --attention-backend CUSTOM --language-model-only --trust-remote-code
   --tensor-parallel-size "$TP" --pipeline-parallel-size "$PP"
   --distributed-executor-backend mp

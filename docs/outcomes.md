@@ -16,7 +16,8 @@ The single-stream decode benchmark (`tools/bench_multi.py` with `tools/prompts_d
 Additional baselines on the same hardware:
 - **Without speculative decoding (`SPEC=none`, `T=0`):** 28.4 to 29.3 tok/s single stream (34.2 to 35.2 ms/token); 55.7 tok/s aggregate at 2 concurrent streams; 87.6 tok/s aggregate at 4 concurrent streams (21.9 to 22.9 tok/s per stream).
 - **Cold prefill (unique prompts, prefix caching off):** 354 tok/s at 3,838 tokens, 585 tok/s at 15,352 tokens, 596 tok/s at 17,000 tokens, 668 tok/s at 32,600 tokens, and 717 tok/s at 58,746 tokens.
-- **KV pool:** 399,384 tokens across the four stages (`PART=28,22,22,21`, `KVGIB_LIST=7.90,7.20,7.20,7.60`, `max_model_len=131072` default or up to `262144` single-stream, `max_num_seqs=4`, 3.05x concurrency at 128K).
+- **KV pool (dedicated vs co-resident profiles):** 399,384 tokens across the four stages at `KVGIB_LIST=7.90,7.20,7.20,7.60` (`PART=28,22,22,21`, `max_model_len=131072` default or up to `262144` single-stream, `max_num_seqs=4`, 3.05x concurrency at 128K), or 143,408 tokens (1.09x at 128K, verified on an 85,882-token needle pass at 739.6 tok/s cold prefill) at `KVGIB_LIST=2.80,2.70,2.60,2.75`, which leaves 4.5 to 6.6 GiB of free VRAM per GPU so resident GPU compute/miners can pause with `SIGSTOP` during active requests and resume with `SIGCONT` when idle.
+- **Non-speculative `fp8_ds_mla` KV support:** `engine/vllm-k31-sm80.patch` also adds a 528-byte NoPE / 656-byte RoPE `fp8_ds_mla` reader to `TritonMLASparseBackend` for `SPEC=none` multi-stream deployments. When `SPEC=dspark` is active, keep `KV_DTYPE=bfloat16` (`block_size=3072`): DSpark's 5 BF16 GQA layers (`2,048 B/tok` per layer) share vLLM's unified `BLHNC` block pool on stage 3, so raising `block_size` to `4,608` under `fp8_ds_mla` enlarges DSpark's per-block page and reduces stage-3 block count.
 
 ## What Each Component Contributes
 

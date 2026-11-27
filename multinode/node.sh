@@ -41,6 +41,16 @@ fi
 PREFIX_ARGS=(--no-enable-prefix-caching)
 [ "${PREFIX_CACHING:-0}" = "1" ] && PREFIX_ARGS=(--enable-prefix-caching)
 
+VISION_ARGS=(--language-model-only)
+if [ "${VISION:-0}" = "1" ]; then
+  VISION_ARGS=(--limit-mm-per-prompt "{\"image\":${VISION_MAX_IMAGES:-8}}")
+fi
+
+OFFLOAD_ARGS=()
+if [ -n "${KV_OFFLOAD_GIB:-}" ] && [ "${KV_OFFLOAD_GIB}" != "0" ]; then
+  OFFLOAD_ARGS=(--kv-offloading-size "$KV_OFFLOAD_GIB")
+fi
+
 SPEC_ARGS=()
 if [ "${SPEC:-none}" = "dspark" ]; then
   SPECJSON="{\"method\":\"dspark\",\"model\":\"$DSPARK_DIR\",\"kv_cache_dtype\":\"bfloat16\",\"num_speculative_tokens\":${SPEC_NUM_TOKENS},\"adaptive_k\":{\"tiers\":${SPEC_TIERS},\"confidence\":{\"thresholds\":${SPEC_THRESHOLDS},\"hysteresis\":0.12,\"accept_weight\":0.12,\"max_age\":2},\"log_interval\":64}}"
@@ -62,7 +72,7 @@ EXTRA_ARR=(${EXTRA_SERVE_ARGS:-})
 CMD=(
   docker run -d --name "$CNAME" --hostname "$CNAME" --init
   --gpus "\"device=$GPUS\""
-  --network host --ipc host --shm-size 32g --pids-limit 8192
+  --network host --ipc host --shm-size "${SHM_SIZE:-32g}" --pids-limit 8192
   --memory "$MEM"
   "${IB_ARGS[@]}" "${IO_ARGS[@]}"
   -e "VLLM_HOST_IP=$MY_IP"
@@ -92,7 +102,7 @@ CMD=(
   "$VIEW"
   --served-model-name "$SERVED_MODEL_NAME"
   --load-format k31q --quantization k31q --kv-cache-dtype "${KV_DTYPE:-bfloat16}"
-  --attention-backend CUSTOM --language-model-only --trust-remote-code
+  --attention-backend CUSTOM "${VISION_ARGS[@]}" --trust-remote-code
   --tensor-parallel-size "$TP" --pipeline-parallel-size "$PP"
   --distributed-executor-backend mp
   --nnodes "$NN" --node-rank "$NR" --master-addr "$MASTER_IP" --master-port "$MASTER_PORT"
@@ -103,6 +113,7 @@ CMD=(
   --max-num-seqs "$MAX_SEQS"
   --max-num-batched-tokens "$MAX_BATCHED_TOKENS"
   "${PREFIX_ARGS[@]}"
+  "${OFFLOAD_ARGS[@]}"
   --compilation-config "{\"cudagraph_capture_sizes\":[$CG_SIZES]}"
   --host "$API_BIND_HOST" --port "$API_PORT"
   "${SPEC_ARGS[@]}"
